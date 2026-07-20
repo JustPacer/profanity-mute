@@ -6,11 +6,11 @@ from typing import Callable, List, Set
 
 class WatchFolderMonitor:
     """
-    Монитор авто-папки: отслеживает появление новых видеофайлов (MP4, MOV, MKV),
-    ждёт завершения записи файла (например от OBS) и запускает авто-обработку.
+    Монитор авто-папки: отслеживает появление новых видео и аудиофайлов (MP4, MOV, MKV, WAV, MP3, M4A, AAC, FLAC),
+    ждёт завершения записи файла и запускает авто-обработку.
     """
 
-    SUPPORTED_EXTENSIONS = {'.mp4', '.mov', '.mkv', '.avi'}
+    SUPPORTED_EXTENSIONS = {'.mp4', '.mov', '.mkv', '.avi', '.wav', '.mp3', '.m4a', '.aac', '.flac'}
 
     def __init__(self, watch_dir: str, process_callback: Callable[[str], None], check_interval_sec: float = 5.0):
         self.watch_dir = watch_dir
@@ -21,12 +21,11 @@ class WatchFolderMonitor:
         self.thread = None
 
     def is_file_ready(self, file_path: str) -> bool:
-        """Проверяет, завершена ли запись файла (файл свободен для чтения и не меняет размер)."""
+        """Проверяет, завершена ли запись файла."""
         if not os.path.exists(file_path):
             return False
 
         try:
-            # 1. Пробуем открыть файл в эксклюзивном режиме
             initial_size = os.path.getsize(file_path)
             if initial_size == 0:
                 return False
@@ -34,11 +33,9 @@ class WatchFolderMonitor:
             time.sleep(1.0)
             second_size = os.path.getsize(file_path)
             
-            # Если размер меняется — файл ещё записывается (например OBS)
             if initial_size != second_size:
                 return False
 
-            # Пробуем открыть на чтение
             with open(file_path, 'rb') as f:
                 f.read(1024)
             return True
@@ -55,7 +52,6 @@ class WatchFolderMonitor:
                 if not self.is_running:
                     return
 
-                # Пропускаем файлы, у которых уже в названии _censored
                 if "_censored" in file_name:
                     continue
 

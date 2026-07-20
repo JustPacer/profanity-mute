@@ -25,33 +25,33 @@ from core.export_manager import ExportManager
 from core.watch_folder import WatchFolderMonitor
 
 class ProcessingThread(QThread if HAS_PYQT6 else object):
-    """Фоновый поток обработки видео для GUI."""
+    """Фоновый поток обработки видео/аудио для GUI."""
     if HAS_PYQT6:
         progress_signal = pyqtSignal(float, str)
         finished_signal = pyqtSignal(bool, str, dict)
         log_signal = pyqtSignal(str)
 
-    def __init__(self, video_path: str, output_path: str, config: dict):
+    def __init__(self, media_path: str, output_path: str, config: dict):
         if HAS_PYQT6:
             super().__init__()
-        self.video_path = video_path
+        self.media_path = media_path
         self.output_path = output_path
         self.config = config
 
     def run(self):
         try:
-            self.emit_log(f"🎬 Начало обработки файла: {os.path.basename(self.video_path)}")
+            self.emit_log(f"🎬 Начало обработки: {os.path.basename(self.media_path)}")
             
             processor = AudioProcessor()
-            temp_wav = self.video_path + ".temp_input.wav"
-            temp_out_wav = self.video_path + ".temp_censored.wav"
+            temp_wav = self.media_path + ".temp_input.wav"
+            temp_out_wav = self.media_path + ".temp_censored.wav"
             
-            self.emit_progress(0.05, "Извлечение аудиодорожки...")
-            video_duration_sec = processor.extract_audio(self.video_path, temp_wav)
-            if video_duration_sec <= 0:
-                video_duration_sec = processor.get_media_duration(self.video_path)
+            self.emit_progress(0.05, "Извлечение/конвертация аудиодорожки...")
+            duration_sec = processor.extract_audio(self.media_path, temp_wav)
+            if duration_sec <= 0:
+                duration_sec = processor.get_media_duration(self.media_path)
 
-            self.emit_log(f"⏱ Длительность файла: {int(video_duration_sec // 3600):02d}:{int((video_duration_sec % 3600) // 60):02d}:{int(video_duration_sec % 60):02d}")
+            self.emit_log(f"⏱ Длительность: {int(duration_sec // 3600):02d}:{int((duration_sec % 3600) // 60):02d}:{int(duration_sec % 60):02d}")
 
             self.emit_progress(0.10, "Загрузка модели Whisper и транскрибация...")
             transcriber = WhisperTranscriber(
@@ -80,12 +80,14 @@ class ProcessingThread(QThread if HAS_PYQT6 else object):
                 progress_callback=on_transcribe_progress
             )
 
-            self.emit_progress(0.75, "Анализ и поиск матерных слов...")
+            self.emit_progress(0.75, "Анализ матерных слов и поиск корней...")
             p_filter = ProfanityFilter(
                 custom_bad_words=self.config.get("custom_bad_words", []),
                 custom_whitelist=self.config.get("whitelist_words", [])
             )
-            profane_words = p_filter.find_profanity_in_segments(segments)
+            
+            root_only = self.config.get("root_only_muting", True)
+            profane_words = p_filter.find_profanity_in_segments(segments, root_only=root_only)
             self.emit_log(f" Найдено нецензурных слов: {len(profane_words)}")
 
             export_mgr = ExportManager()
@@ -95,11 +97,15 @@ class ProcessingThread(QThread if HAS_PYQT6 else object):
                 for idx, h in enumerate(highlights[:5], 1):
                     self.emit_log(f"   {idx}. ⏰ [{h['timestamp_str']}] — {h['swear_count']} матов за 30с")
 
+            # Экспорт маркеров EDL (с 01h смещением) и CSV для DaVinci Resolve
             if self.config.get("export_davinci_markers", True):
                 base_no_ext = os.path.splitext(self.output_path)[0]
+                edl_path = f"{base_no_ext}_davinci_markers.edl"
                 csv_path = f"{base_no_ext}_davinci_markers.csv"
-                export_mgr.export_davinci_csv(profane_words, csv_path)
-                self.emit_log(f"📌 Маркеры для DaVinci Resolve сохранены: {os.path.basename(csv_path)}")
+                
+                export_mgr.export_davinci_edl(profane_words, edl_path, clip_name=os.path.basename(self.media_path), start_hour_offset=1)
+                export_mgr.export_davinci_csv(profane_words, csv_path, start_hour_offset=1)
+                self.emit_log(f"📌 Маркеры DaVinci (.edl и .csv) сохранены: {os.path.basename(edl_path)}")
 
             self.emit_progress(0.85, "Применение глушения/запикивания на аудио...")
             processor.censor_audio_numpy(
@@ -109,13 +115,13 @@ class ProcessingThread(QThread if HAS_PYQT6 else object):
                 censor_mode=self.config.get("censor_mode", "volume_ducking"),
                 attenuation_db=self.config.get("attenuation_db", -24.0),
                 beep_freq=self.config.get("beep_frequency", 1000),
-                padding_start=self.config.get("padding_start_sec", 0.06),
-                padding_end=self.config.get("padding_end_sec", 0.06),
+                padding_start=self.config.get("padding_start_sec", 0.04),
+                padding_end=self.config.get("padding_end_sec", 0.04),
                 fade_duration=self.config.get("fade_duration_sec", 0.02)
             )
 
-            self.emit_progress(0.92, "Мультиплексирование видео (FFmpeg Stream Copy)...")
-            processor.mux_video(self.video_path, temp_out_wav, self.output_path)
+            self.emit_progress(0.92, "Экспорт итогового файла...")
+            processor.export_final_media(self.media_path, temp_out_wav, self.output_path)
 
             for tmp in (temp_wav, temp_out_wav):
                 if os.path.exists(tmp):
@@ -126,8 +132,8 @@ class ProcessingThread(QThread if HAS_PYQT6 else object):
 
             stats_mgr = StatsManager()
             session_data = stats_mgr.add_processing_session(
-                video_name=self.video_path,
-                video_duration_sec=video_duration_sec,
+                video_name=self.media_path,
+                video_duration_sec=duration_sec,
                 profane_words_detected=profane_words,
                 censor_mode=self.config.get("censor_mode", "volume_ducking")
             )
@@ -163,7 +169,7 @@ if HAS_PYQT6:
             self.stats_mgr = StatsManager()
             self.watch_monitor = None
             
-            self.setWindowTitle("AutoCens — Автоматическое запикивание мата в видео (Stream Copy)")
+            self.setWindowTitle("AutoCens — Автоматическое запикивание мата (Видео и Аудио)")
             self.resize(950, 720)
             self.setup_ui()
             self.apply_dark_theme()
@@ -182,8 +188,9 @@ if HAS_PYQT6:
                 "censor_mode": "volume_ducking",
                 "attenuation_db": -24.0,
                 "beep_frequency": 1000,
-                "padding_start_sec": 0.06,
-                "padding_end_sec": 0.06,
+                "padding_start_sec": 0.04,
+                "padding_end_sec": 0.04,
+                "root_only_muting": True,
                 "export_davinci_markers": True,
                 "watch_folder": "",
                 "watch_folder_enabled": False,
@@ -209,7 +216,7 @@ if HAS_PYQT6:
 
             self.tab_process = QWidget()
             self.setup_process_tab()
-            self.tabs.addTab(self.tab_process, "🎬 Обработка видео")
+            self.tabs.addTab(self.tab_process, "🎬 Обработка видео / аудио")
 
             self.tab_watch = QWidget()
             self.setup_watch_tab()
@@ -226,12 +233,12 @@ if HAS_PYQT6:
         def setup_process_tab(self):
             layout = QVBoxLayout(self.tab_process)
 
-            file_box = QGroupBox("Выбор медиафайла (MP4, MOV, MKV, AVI)")
+            file_box = QGroupBox("Выбор медиафайла (MP4, MOV, MKV, WAV, MP3, M4A, AAC, FLAC)")
             file_layout = QHBoxLayout(file_box)
             
             self.input_file_edit = QTextEdit()
             self.input_file_edit.setMaximumHeight(35)
-            self.input_file_edit.setPlaceholderText("Выберите или перетащите файл...")
+            self.input_file_edit.setPlaceholderText("Выберите или перетащите видео или аудиофайл...")
             
             btn_browse = QPushButton("📁 Обзор...")
             btn_browse.setHeight = 35
@@ -273,8 +280,6 @@ if HAS_PYQT6:
                 self.combo_device.setCurrentIndex(1)
             elif cur_dev == "cpu":
                 self.combo_device.setCurrentIndex(2)
-            else:
-                self.combo_device.setCurrentIndex(0)
 
             params_layout.addWidget(lbl_mode)
             params_layout.addWidget(self.combo_mode)
@@ -284,14 +289,21 @@ if HAS_PYQT6:
             params_layout.addWidget(self.combo_device)
             layout.addWidget(params_box)
 
+            options_box = QHBoxLayout()
+            self.chk_root_only = QCheckBox("✂️ Глушить только корень слова (приставки 'за-', 'по-' остаются слышимыми)")
+            self.chk_root_only.setChecked(self.config.get("root_only_muting", True))
+
+            self.chk_davinci = QCheckBox("📌 Генерировать маркеры для DaVinci Resolve (.EDL, .CSV)")
+            self.chk_davinci.setChecked(self.config.get("export_davinci_markers", True))
+
+            options_box.addWidget(self.chk_root_only)
+            options_box.addWidget(self.chk_davinci)
+            layout.addLayout(options_box)
+
             has_gpu, gpu_desc = WhisperTranscriber.get_gpu_info()
             self.lbl_gpu_status = QLabel(f"⚡ Ускорение: {gpu_desc}")
             self.lbl_gpu_status.setStyleSheet("color: #00ffcc; font-weight: bold; padding: 2px;")
             layout.addWidget(self.lbl_gpu_status)
-
-            self.chk_davinci = QCheckBox("📌 Автоматически генерировать файл маркеров для DaVinci Resolve (.csv)")
-            self.chk_davinci.setChecked(self.config.get("export_davinci_markers", True))
-            layout.addWidget(self.chk_davinci)
 
             self.btn_start = QPushButton("🚀 Запустить автоматическую цензуру")
             self.btn_start.setStyleSheet("font-size: 14px; font-weight: bold; background-color: #0d6efd; color: white; padding: 10px; border-radius: 5px;")
@@ -316,7 +328,7 @@ if HAS_PYQT6:
             grp_watch = QGroupBox("Автоматический мониторинг папки записи (OBS / Twitch)")
             vbox = QVBoxLayout(grp_watch)
 
-            lbl_info = QLabel("Укажите папку, куда ваш OBS или софт записи сохраняет видеозаписи.\nКак только запись стрима завершится, AutoCens автоматически запустит цензуру и приготовит маркеры!")
+            lbl_info = QLabel("Укажите папку, куда ваш OBS или софт записи сохраняет видео или аудиозаписи.\nКак только запись завершится, AutoCens автоматически запустит цензуру!")
             lbl_info.setWordWrap(True)
             vbox.addWidget(lbl_info)
 
@@ -354,7 +366,7 @@ if HAS_PYQT6:
             self.card_total_profanities.setStyleSheet("background-color: #1e1e2f; color: #00ffcc; font-size: 18px; font-weight: bold; padding: 15px; border-radius: 8px; text-align: center;")
             self.card_total_profanities.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-            self.card_total_videos = QLabel("0\nОбработано видео")
+            self.card_total_videos = QLabel("0\nОбработано файлов")
             self.card_total_videos.setStyleSheet("background-color: #1e1e2f; color: #ffcc00; font-size: 18px; font-weight: bold; padding: 15px; border-radius: 8px; text-align: center;")
             self.card_total_videos.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
@@ -391,13 +403,13 @@ if HAS_PYQT6:
             self.spin_pad_start = QDoubleSpinBox()
             self.spin_pad_start.setRange(0.0, 0.5)
             self.spin_pad_start.setSingleStep(0.01)
-            self.spin_pad_start.setValue(self.config.get("padding_start_sec", 0.06))
+            self.spin_pad_start.setValue(self.config.get("padding_start_sec", 0.04))
 
             lbl_p2 = QLabel("Отступ ПОСЛЕ слова (сек):")
             self.spin_pad_end = QDoubleSpinBox()
             self.spin_pad_end.setRange(0.0, 0.5)
             self.spin_pad_end.setSingleStep(0.01)
-            self.spin_pad_end.setValue(self.config.get("padding_end_sec", 0.06))
+            self.spin_pad_end.setValue(self.config.get("padding_end_sec", 0.04))
 
             pad_layout.addWidget(lbl_p1)
             pad_layout.addWidget(self.spin_pad_start)
@@ -419,13 +431,13 @@ if HAS_PYQT6:
 
         def browse_file(self):
             file_path, _ = QFileDialog.getOpenFileName(
-                self, "Выберите видеофайл", "", "Video Files (*.mp4 *.mov *.mkv *.avi)"
+                self, "Выберите медиафайл", "", "Media Files (*.mp4 *.mov *.mkv *.avi *.wav *.mp3 *.m4a *.aac *.flac)"
             )
             if file_path:
                 self.input_file_edit.setText(file_path)
 
         def browse_watch_folder(self):
-            folder_path = QFileDialog.getExistingDirectory(self, "Выберите папку для отслеживания видео")
+            folder_path = QFileDialog.getExistingDirectory(self, "Выберите папку для отслеживания файлов")
             if folder_path:
                 self.txt_watch_folder.setText(folder_path)
                 self.config["watch_folder"] = folder_path
@@ -464,7 +476,7 @@ if HAS_PYQT6:
             summary = self.stats_mgr.get_summary()
 
             self.card_total_profanities.setText(f"{summary['total_profanities']}\nВсего матов запикано")
-            self.card_total_videos.setText(f"{summary['total_videos']}\nОбработано видео")
+            self.card_total_videos.setText(f"{summary['total_videos']}\nОбработано файлов")
             
             total_sec = self.stats_mgr.stats.get("total_video_duration_seconds", 0.0)
             if total_sec >= 3600.0:
@@ -489,6 +501,7 @@ if HAS_PYQT6:
         def save_settings(self):
             self.config["padding_start_sec"] = self.spin_pad_start.value()
             self.config["padding_end_sec"] = self.spin_pad_end.value()
+            self.config["root_only_muting"] = self.chk_root_only.isChecked()
             self.config["export_davinci_markers"] = self.chk_davinci.isChecked()
             custom_bad = [line.strip() for line in self.txt_custom_bad.toPlainText().split("\n") if line.strip()]
             self.config["custom_bad_words"] = custom_bad
@@ -496,12 +509,12 @@ if HAS_PYQT6:
             QMessageBox.information(self, "Сохранено", "Настройки успешно сохранены!")
 
         def start_processing(self):
-            video_path = self.input_file_edit.toPlainText().strip()
-            if not video_path or not os.path.exists(video_path):
-                QMessageBox.warning(self, "Ошибка", "Пожалуйста, выберите валидный видеофайл!")
+            media_path = self.input_file_edit.toPlainText().strip()
+            if not media_path or not os.path.exists(media_path):
+                QMessageBox.warning(self, "Ошибка", "Пожалуйста, выберите валидный медиафайл!")
                 return
 
-            base, ext = os.path.splitext(video_path)
+            base, ext = os.path.splitext(media_path)
             output_path = f"{base}_censored{ext}"
 
             mode_idx = self.combo_mode.currentIndex()
@@ -520,13 +533,14 @@ if HAS_PYQT6:
             self.config["censor_mode"] = censor_mode
             self.config["model_size"] = model_size
             self.config["device"] = device
+            self.config["root_only_muting"] = self.chk_root_only.isChecked()
             self.config["export_davinci_markers"] = self.chk_davinci.isChecked()
 
             self.btn_start.setEnabled(False)
             self.log_text.clear()
             self.progress_bar.setValue(0)
 
-            self.thread = ProcessingThread(video_path, output_path, self.config)
+            self.thread = ProcessingThread(media_path, output_path, self.config)
             self.thread.progress_signal.connect(self.update_progress)
             self.thread.log_signal.connect(self.append_log)
             self.thread.finished_signal.connect(self.processing_finished)

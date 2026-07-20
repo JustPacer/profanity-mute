@@ -10,9 +10,11 @@ from typing import List, Dict, Callable, Optional, Tuple
 
 class AudioProcessor:
     """
-    Класс для быстрой обработки аудио и пересборки видео через FFmpeg (Stream Copy).
-    Поддерживает типы глушения: volume_ducking, mute, beep.
+    Класс для быстрой обработки аудио и пересборки видео/аудио через FFmpeg (Stream Copy).
+    Поддерживает видео (MP4, MOV, MKV) и аудиофайлы (WAV, MP3, M4A, AAC, FLAC).
     """
+
+    AUDIO_EXTENSIONS = {'.wav', '.mp3', '.m4a', '.aac', '.flac', '.ogg'}
 
     def __init__(self, ffmpeg_path: Optional[str] = None):
         self.ffmpeg_exe = ffmpeg_path or self.find_ffmpeg()
@@ -46,6 +48,11 @@ class AudioProcessor:
 
         return "ffmpeg"
 
+    def is_audio_file(self, file_path: str) -> bool:
+        """Проверяет, является ли файл аудиофайлом (а не видео)."""
+        ext = os.path.splitext(file_path)[1].lower()
+        return ext in self.AUDIO_EXTENSIONS
+
     def get_media_duration(self, file_path: str) -> float:
         """Возвращает точную длительность медиафайла в секундах."""
         if not os.path.exists(file_path):
@@ -70,12 +77,12 @@ class AudioProcessor:
 
         return 0.0
 
-    def extract_audio(self, video_path: str, output_wav_path: str) -> float:
-        """Извлекает 16-bit PCM WAV аудиодорожку из видеофайла и возвращает длительность."""
+    def extract_audio(self, media_path: str, output_wav_path: str) -> float:
+        """Извлекает/конвертирует 16-bit PCM WAV аудиодорожку из видео или аудиофайла."""
         cmd = [
             self.ffmpeg_exe,
             "-y",
-            "-i", video_path,
+            "-i", media_path,
             "-vn",
             "-acodec", "pcm_s16le",
             "-ar", "44100",
@@ -83,7 +90,7 @@ class AudioProcessor:
             output_wav_path
         ]
         
-        logging.info(f"Извлечение аудио из {video_path}...")
+        logging.info(f"Извлечение/конвертация аудио из {media_path}...")
         result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='ignore')
         if result.returncode != 0:
             raise RuntimeError(f"Ошибка FFmpeg при извлечении аудио: {result.stderr}")
@@ -218,25 +225,39 @@ class AudioProcessor:
         audio_int16 = np.clip(audio_float, -32768, 32767).astype(np.int16)
         self.write_wav(output_wav_path, sample_rate, audio_int16)
 
-    def mux_video(self, original_video_path: str, new_audio_path: str, output_video_path: str) -> None:
+    def export_final_media(self, original_path: str, censored_wav_path: str, output_path: str) -> None:
         """
-        Пересобирает видео с новой аудиодорожкой без перекодирования видео (Stream Copy).
+        Сохраняет итоговый файл: если вход был видео — пересобирает через Stream Copy,
+        если был аудиофайлом — экспортирует в итоговый аудиоформат (.wav / .mp3 / .m4a).
         """
-        cmd = [
-            self.ffmpeg_exe,
-            "-y",
-            "-i", original_video_path,
-            "-i", new_audio_path,
-            "-c:v", "copy",
-            "-c:a", "aac",
-            "-b:a", "192k",
-            "-map", "0:v:0",
-            "-map", "1:a:0",
-            "-shortest",
-            output_video_path
-        ]
-
-        logging.info(f"Мультиплексирование в итоговый видеофайл: {output_video_path}...")
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='ignore')
-        if result.returncode != 0:
-            raise RuntimeError(f"Ошибка FFmpeg при сборке видео: {result.stderr}")
+        if self.is_audio_file(original_path):
+            # Если исходный файл аудио
+            if output_path.endswith('.wav'):
+                shutil.copyfile(censored_wav_path, output_path)
+            else:
+                cmd = [
+                    self.ffmpeg_exe,
+                    "-y",
+                    "-i", censored_wav_path,
+                    "-b:a", "192k",
+                    output_path
+                ]
+                subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+        else:
+            # Если исходный файл видео — Stream Copy
+            cmd = [
+                self.ffmpeg_exe,
+                "-y",
+                "-i", original_path,
+                "-i", censored_wav_path,
+                "-c:v", "copy",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                "-map", "0:v:0",
+                "-map", "1:a:0",
+                "-shortest",
+                output_path
+            ]
+            result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='ignore')
+            if result.returncode != 0:
+                raise RuntimeError(f"Ошибка FFmpeg при сборке видео: {result.stderr}")

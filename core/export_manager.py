@@ -4,31 +4,58 @@ from typing import List, Dict
 
 class ExportManager:
     """
-    Класс для экспорта таймкодов и маркеров цензуры в форматы монтажных программ:
-    - DaVinci Resolve (CSV маркеры с UTF-8 BOM для корректного отображения кириллицы)
-    - Текстовый список хайлайтов / эмоциональных пиков
+    Класс экспорта таймкодов и маркеров цензуры в форматы монтажных программ:
+    - DaVinci Resolve EDL (CMX3600 EDL со стартовым смещением 01:00:00:00 под дефолтный таймлайн DaVinci)
+    - DaVinci Resolve CSV (с кодировкой UTF-8 BOM)
+    - Детектор хайлайтов / горячих моментов
     """
 
     @staticmethod
-    def time_to_timecode(seconds: float, fps: float = 30.0) -> str:
-        """Преобразует секунды в формат таймкода HH:MM:SS:FF."""
-        hours = int(seconds // 3600)
+    def time_to_timecode(seconds: float, fps: float = 30.0, hour_offset: int = 1) -> str:
+        """Преобразует секунды в формат таймкода HH:MM:SS:FF со смещением на 1 час (01:00:00:00)."""
+        hours = int(seconds // 3600) + hour_offset
         minutes = int((seconds % 3600) // 60)
         secs = int(seconds % 60)
         frames = int((seconds - int(seconds)) * fps)
         return f"{hours:02d}:{minutes:02d}:{secs:02d}:{frames:02d}"
 
-    def export_davinci_csv(self, profane_words: List[Dict], output_csv_path: str):
+    def export_davinci_edl(self, profane_words: List[Dict], output_edl_path: str, clip_name: str = "STREAM", start_hour_offset: int = 1):
         """
-        Экспортирует маркеры для DaVinci Resolve в формате CSV с UTF-8 BOM кодировкой (utf-8-sig).
-        Это предотвращает "крякозябры" (РњР°С‚) в DaVinci и Excel.
+        Экспортирует маркеры для DaVinci Resolve в формате CMX3600 EDL со смещением на 01:00:00:00.
+        Импорт в DaVinci: ПКМ по Таймлайну в Media Pool ➔ Timelines ➔ Import ➔ Timeline Markers from EDL...
+        """
+        lines = [
+            "TITLE: TIMELINE MARKERS",
+            "FCM: NON-DROP FRAME",
+            ""
+        ]
+
+        for i, item in enumerate(profane_words, start=1):
+            start_sec = item.get('full_start', item['start'])
+            end_sec = item.get('full_end', item['end'])
+
+            start_tc = self.time_to_timecode(start_sec, hour_offset=start_hour_offset)
+            end_tc = self.time_to_timecode(end_sec, hour_offset=start_hour_offset)
+            word_str = item.get('word', 'profanity')
+
+            entry_num = f"{i:03d}"
+            lines.append(f"{entry_num}  BL       V     C        {start_tc} {end_tc} {start_tc} {end_tc}")
+            lines.append(f"* LOC: {start_tc} RED   Censored #{i} - Мат: {word_str}")
+            lines.append("")
+
+        with open(output_edl_path, 'w', encoding='utf-8-sig') as f:
+            f.write("\n".join(lines))
+
+    def export_davinci_csv(self, profane_words: List[Dict], output_csv_path: str, start_hour_offset: int = 1):
+        """
+        Экспортирует маркеры для DaVinci Resolve в формате CSV с UTF-8 BOM.
         """
         headers = ["Source In", "Source Out", "Record In", "Record Out", "Name", "Comments", "Color"]
         
         rows = []
         for i, item in enumerate(profane_words, start=1):
-            start_tc = self.time_to_timecode(item['start'])
-            end_tc = self.time_to_timecode(item['end'])
+            start_tc = self.time_to_timecode(item.get('full_start', item['start']), hour_offset=start_hour_offset)
+            end_tc = self.time_to_timecode(item.get('full_end', item['end']), hour_offset=start_hour_offset)
             word_str = item.get('word', 'profanity')
             
             rows.append([
@@ -41,7 +68,6 @@ class ExportManager:
                 "Red"
             ])
 
-        # Используем кодировку 'utf-8-sig' (UTF-8 с BOM меткой) для корректного распознавания кириллицы
         with open(output_csv_path, 'w', encoding='utf-8-sig', newline='') as f:
             writer = csv.writer(f)
             writer.writerow(headers)

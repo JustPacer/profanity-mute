@@ -1,4 +1,4 @@
-# 🔇 ProfanityMute (AutoCens)
+# ProfanityMute (AutoCens)
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![FFmpeg](https://img.shields.io/badge/ffmpeg-stream--copy-green.svg)](https://ffmpeg.org/)
@@ -7,33 +7,31 @@
 
 [Русская версия документации (README_RU.md)](README_RU.md) | [Инструкция по установке (INSTALLATION_GUIDE.md)](INSTALLATION_GUIDE.md)
 
-**ProfanityMute** (AutoCens) is a fast, AI-powered desktop and CLI tool designed for content creators, video editors, and streamers to automatically detect and attenuate/bleep swear words in long videos (stream VODs, highlights) and standalone audio tracks — **without re-encoding the video stream**.
+ProfanityMute is a Python utility designed for streamers, video editors, and content creators who edit long stream VODs and highlights. It automates speech recognition, detects profanity with word-level timestamps, attenuates or mutes swear words, and exports timeline markers directly for video editing software like DaVinci Resolve.
+
+Unlike traditional tools that force full video re-encoding, ProfanityMute utilizes FFmpeg Direct Stream Copy. Video tracks remain untouched, processing a 2+ hour 1080p stream recording in seconds after transcription completes.
 
 ---
 
-## ✨ Key Features
+## Key Features
 
-- **⚡ Lossless & Ultra Fast (FFmpeg Direct Stream Copy)**: Video tracks are not re-encoded. Only modified audio is replaced. Processing 2+ hour 1080p videos takes seconds after speech recognition completes.
-- **✂️ Human-like Root-Only Muting**: Instead of muting the whole word (e.g., *"za-e-bal-sya"*), it calculates exact stem time bounds to mute **only the profanity root** (*"za...sya"*), preserving prefixes and endings for natural YouTube sound.
-- **📌 DaVinci Resolve Timeline Markers Export**: Automatically generates `*_davinci_markers.edl` (with `01:00:00:00` hour offset for DaVinci default timelines) and `*_davinci_markers.csv`. Import directly into your active timeline with 2 clicks.
-- **🎵 Standalone Audio & Video Files**: Supports `.mp4`, `.mov`, `.mkv`, `.avi` video files as well as standalone `.wav`, `.mp3`, `.m4a`, `.aac`, `.flac` audio tracks.
-- **🚀 NVIDIA CUDA GPU Acceleration**: Up to 8x speedup using NVIDIA Tensor Cores (`RTX/GTX`) with automatic DLL registration on Windows.
-- **🔥 Hype / Emotional Peak Detector**: Detects profanity density to highlight the most intense rage/clutch moments for YouTube Shorts & TikTok clips.
-- **📁 Toggleable Watch Folder (Auto Monitoring)**: Automatically picks up new stream recordings from OBS/Streamlabs upon completion and censors them in the background.
-- **📊 Cumulative Statistics & Word Frequency**: Persistent JSON database (`data/stats.json`) tracking overall censored profanity count and word usage stats across all runs.
-- **🔊 Flexible Censor Modes**:
-  - `Volume Ducking (-24dB)` *(Recommended for editing)*
-  - `Full Mute (0dB)`
-  - `Classic Beep Tone (1000Hz)`
+* **FFmpeg Direct Stream Copy**: Video streams are copied without re-encoding. Only the audio track is extracted, modified, and remuxed back into the container (.mp4, .mov, .mkv).
+* **Stem-Level (Root-Only) Muting**: Instead of muting an entire word (e.g. *"za-e-bal-sya"*), the algorithm calculates the exact time boundaries of the profanity root (*"za...sya"*). Prefixes and endings remain audible, producing natural, hand-edited audio suitable for YouTube monetization.
+* **DaVinci Resolve Timeline Markers**: Automatically exports `.edl` (with `01:00:00:00` start timecode offset) and `.csv` marker files. Markers import directly onto your active timeline with exact timestamps and word labels.
+* **Fine-Tuned Russian Speech Model**: Supports `antony66/whisper-large-v3-russian` (via CTranslate2 `bzikst/faster-whisper-large-v3-russian`) for higher recognition accuracy on Russian gaming speech, slang, and fast stream chatter.
+* **Standalone Audio & Video Support**: Accepts video containers (`.mp4`, `.mov`, `.mkv`, `.avi`) as well as isolated audio tracks (`.wav`, `.mp3`, `.m4a`, `.flac`, `.aac`).
+* **Profanity Heatmap & Transcript Inspector**: Built-in dark GUI tab featuring a per-minute profanity density graph and a searchable speech transcript viewer with highlighted profanity to verify timestamp accuracy.
+* **GPU Acceleration**: Native NVIDIA CUDA acceleration on Windows (`RTX/GTX`) with automatic DLL registration.
+* **Watch Folder Monitoring**: Background monitor for OBS/Streamlabs recording directories that automatically processes new stream recordings upon completion.
 
 ---
 
-## 🛠 Installation
+## Installation
 
-### Prerequisites
-- **OS**: Windows 10 / 11, Linux, or macOS.
-- **Python**: Version 3.10 or 3.11.
-- **FFmpeg**: Installed or available on system.
+### Requirements
+* **OS**: Windows 10 / 11, Linux, or macOS.
+* **Python**: 3.10 or 3.11.
+* **FFmpeg**: Installed and available on system PATH.
 
 ### 1. Clone repository & install dependencies
 
@@ -43,7 +41,7 @@ cd profanity-mute
 pip install -r requirements.txt
 ```
 
-### 2. Enable NVIDIA GPU Acceleration (Recommended for RTX/GTX users)
+### 2. Enable NVIDIA GPU Acceleration (Optional for RTX/GTX users)
 
 ```bash
 pip install nvidia-cublas-cu12 nvidia-cudnn-cu12
@@ -51,39 +49,38 @@ pip install nvidia-cublas-cu12 nvidia-cudnn-cu12
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Graphical User Interface (GUI)
 
-Launch the PyQt6 dark-themed GUI:
+Launch the PyQt6 interface:
 
 ```bash
 python main.py
 ```
-*(or `python main.py --gui`)*
 
-Features in GUI:
-- Drag-and-drop video (`.mp4`, `.mov`, `.mkv`) and audio (`.wav`, `.mp3`, `.m4a`) files.
-- Toggle *"✂️ Mute root only"*.
-- Select attenuation level (dB), Whisper model accuracy (`base`, `small`, `medium`, `large-v3`), and GPU device (`Auto`, `CUDA`, `CPU`).
-- View cumulative profanity stats and word frequency charts.
-- Configure Watch Folder monitoring tab.
+GUI capabilities:
+* Drag-and-drop media files (`.mp4`, `.mov`, `.wav`, `.mp3`).
+* Toggle root-only muting and DaVinci markers export.
+* Select attenuation mode (Volume Ducking -24dB, Mute, or Beep tone).
+* View profanity heatmap and search full speech transcript.
+* Configure Watch Folder background directory monitoring.
 
 ### Command Line Interface (CLI)
 
-Censor a video or audio file with volume ducking at -24 dB:
+Process a video file with volume ducking at -24 dB:
 
 ```bash
-python main.py my_stream.mp4 --mode volume_ducking --db -24 --model medium
+python main.py my_stream.mp4 --mode volume_ducking --db -24 --model antony66/whisper-large-v3-russian
 ```
 
-Show all-time cumulative profanity statistics:
+Display cumulative profanity statistics across all processed files:
 
 ```bash
 python main.py --stats
 ```
 
-Monitor a directory for new OBS stream recordings:
+Run background directory monitoring for OBS recordings:
 
 ```bash
 python main.py --watch-dir "C:\Streams\OBS"
@@ -91,43 +88,43 @@ python main.py --watch-dir "C:\Streams\OBS"
 
 ---
 
-## 🎬 DaVinci Resolve Timeline Markers Import
+## Importing Markers into DaVinci Resolve
 
 1. Process your video or audio file in ProfanityMute.
-2. Open your project and existing timeline in **DaVinci Resolve**.
-3. In **Media Pool** (top-left), right-click on your **Timeline** icon.
-4. Select **`Timelines` ➔ `Import` ➔ `Timeline Markers from EDL...`**.
-5. Pick the generated **`*_davinci_markers.edl`** file.
-6. Red markers with exact profanity labels appear directly on your timeline!
+2. Open your project and target timeline in **DaVinci Resolve**.
+3. In the **Media Pool** panel (top-left), right-click on your **Timeline** icon.
+4. Navigate to **Timelines ➔ Import ➔ Timeline Markers from EDL...**.
+5. Select the generated `*_davinci_markers.edl` file.
+6. Red markers with profanity labels will populate directly on your active timeline.
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
 ```text
 profanity-mute/
-├── main.py                   # Entry point (GUI & CLI)
+├── main.py                   # Main entry point (GUI & CLI)
 ├── config.json               # Application configuration
-├── requirements.txt         # Python dependencies
+├── requirements.txt         # Dependencies
 ├── INSTALLATION_GUIDE.md     # Installation & user guide (RU)
-├── README.md                 # Documentation in English
-├── README_RU.md              # Documentation in Russian
+├── README.md                 # Technical documentation (EN)
+├── README_RU.md              # Technical documentation (RU)
 ├── LICENSE                   # MIT License
 ├── core/
-│   ├── transcriber.py        # Faster-Whisper & CUDA acceleration
-│   ├── profanity_filter.py   # Regex profanity detector, stem calculator & whitelist
+│   ├── transcriber.py        # Faster-Whisper wrapper & CUDA setup
+│   ├── profanity_filter.py   # Regex detector, root calculator & whitelist
 │   ├── audio_processor.py    # NumPy audio ducking & FFmpeg stream copy
 │   ├── stats_manager.py      # Cumulative statistics manager
-│   ├── export_manager.py     # DaVinci markers (EDL/CSV) & hype moment detector
-│   └── watch_folder.py       # Background watch folder monitor
+│   ├── export_manager.py     # DaVinci markers (EDL/CSV) & heatmap calculator
+│   └── watch_folder.py       # Background directory monitor
 ├── data/
-│   └── stats.json            # Cumulative profanity statistics database
+│   └── stats.json            # Cumulative profanity statistics storage
 └── gui/
     └── app.py                # PyQt6 GUI application
 ```
 
 ---
 
-## 📄 License
+## License
 
-This project is licensed under the [MIT License](LICENSE).
+This project is released under the [MIT License](LICENSE).

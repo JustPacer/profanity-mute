@@ -1,16 +1,16 @@
 {
   "created_at": "2026-07-20T10:26:03.769140",
-  "last_updated": "2026-07-20T17:06:13.898993",
-  "total_videos_processed": 6,
-  "total_profanities_censored": 980,
-  "total_video_duration_seconds": 8466.36537414966,
+  "last_updated": "2026-07-20T22:05:22.077503",
+  "total_videos_processed": 11,
+  "total_profanities_censored": 994,
+  "total_video_duration_seconds": 9162.395147392292,
   "word_counts": {
     "нахуя": 34,
-    "сука": 37,
-    "блять": 137,
+    "сука": 38,
+    "блять": 145,
     "похуй": 43,
     "хуйню": 24,
-    "нихуя": 46,
+    "нихуя": 50,
     "нахуй": 78,
     "ебанное": 1,
     "ебала": 6,
@@ -59,7 +59,7 @@
     "ебланы": 4,
     "ухуясь": 2,
     "нихуясия": 12,
-    "хуя": 11,
+    "хуя": 12,
     "раздебал": 12,
     "доебываться": 5,
     "доеб": 5,
@@ -425,6 +425,60 @@
         "ебальник": 1,
         "хуйло": 2,
         "хуйла": 2
+      }
+    },
+    {
+      "timestamp": "2026-07-20T21:41:53.704375",
+      "video_name": "Tchaikovsky - Swan Lake (Swan Theme).mp3",
+      "duration_sec": 179.1535827664399,
+      "censored_count": 0,
+      "censor_mode": "volume_ducking",
+      "session_words": {}
+    },
+    {
+      "timestamp": "2026-07-20T21:55:33.702737",
+      "video_name": "Почему фанаты сифона приходят в комментарии.mp4",
+      "duration_sec": 129.21904761904761,
+      "censored_count": 3,
+      "censor_mode": "mute",
+      "session_words": {
+        "блять": 2,
+        "нихуя": 1
+      }
+    },
+    {
+      "timestamp": "2026-07-20T21:58:23.461330",
+      "video_name": "Почему фанаты сифона приходят в комментарии.mp4",
+      "duration_sec": 129.21904761904761,
+      "censored_count": 3,
+      "censor_mode": "mute",
+      "session_words": {
+        "блять": 2,
+        "нихуя": 1
+      }
+    },
+    {
+      "timestamp": "2026-07-20T22:01:28.364206",
+      "video_name": "Почему фанаты сифона приходят в комментарии.mp4",
+      "duration_sec": 129.21904761904761,
+      "censored_count": 2,
+      "censor_mode": "mute",
+      "session_words": {
+        "блять": 1,
+        "нихуя": 1
+      }
+    },
+    {
+      "timestamp": "2026-07-20T22:05:22.077503",
+      "video_name": "Почему фанаты сифона приходят в комментарии.mp4",
+      "duration_sec": 129.21904761904761,
+      "censored_count": 6,
+      "censor_mode": "mute",
+      "session_words": {
+        "хуя": 1,
+        "блять": 3,
+        "сука": 1,
+        "нихуя": 1
       }
     }
   ]

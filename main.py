@@ -25,7 +25,7 @@ def process_video_cli(
     output_path: str = None,
     censor_mode: str = "volume_ducking",
     attenuation_db: float = -24.0,
-    model_size: str = "medium",
+    model_size: str = "antony66/whisper-large-v3-russian",
     language: str = "ru",
     device: str = "auto",
     root_only: bool = True
@@ -55,7 +55,7 @@ def process_video_cli(
     if duration_sec <= 0:
         duration_sec = processor.get_media_duration(media_path)
 
-    print(f"\n[2/5] 🎤 Расшифровка речи и таймкодов (faster-whisper {model_size})...")
+    print(f"\n[2/5] 🎤 Расшифровка речи и таймкодов (Whisper {model_size})...")
     transcriber = WhisperTranscriber(model_size=model_size, device=device)
 
     def cli_progress(*args):
@@ -191,7 +191,7 @@ def main():
     parser.add_argument("-o", "--output", help="Путь к выходному файлу")
     parser.add_argument("-m", "--mode", choices=["volume_ducking", "mute", "beep"], default="volume_ducking", help="Режим цензуры")
     parser.add_argument("--db", type=float, default=-24.0, help="Уровень приглушения в dB")
-    parser.add_argument("--model", default="medium", choices=["tiny", "base", "small", "medium", "large-v3"], help="Модель Whisper")
+    parser.add_argument("--model", default="antony66/whisper-large-v3-russian", help="Модель Whisper (например: antony66/whisper-large-v3-russian, medium, large-v3)")
     parser.add_argument("--device", default="auto", choices=["auto", "cuda", "cpu"], help="Устройство (cuda или cpu)")
     parser.add_argument("--no-root-only", action="store_true", help="Глушить слово целиком вместо только корня")
     parser.add_argument("--watch-dir", help="Запустить фоновый мониторинг заданной папки")

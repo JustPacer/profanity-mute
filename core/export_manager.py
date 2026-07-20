@@ -1,5 +1,6 @@
 import os
 import csv
+import xml.etree.ElementTree as ET
 from typing import List, Dict
 
 class ExportManager:
@@ -8,6 +9,7 @@ class ExportManager:
     - DaVinci Resolve EDL (CMX3600 EDL со стартовым смещением 01:00:00:00 под дефолтный таймлайн DaVinci)
     - DaVinci Resolve CSV (с кодировкой UTF-8 BOM)
     - Детектор хайлайтов / горячих моментов
+    - Расчёт 1-минутной плотности мата для Матометра (Profanity Heatmap)
     """
 
     @staticmethod
@@ -113,3 +115,32 @@ class ExportManager:
 
         filtered_highlights.sort(key=lambda x: x["swear_count"], reverse=True)
         return filtered_highlights
+
+    @staticmethod
+    def get_profanity_density(profane_words: List[Dict], total_duration_sec: float, bucket_minutes: int = 1) -> List[Dict]:
+        """
+        Рассчитывает плотность мата по 1-минутным интервалам для строения Матометра.
+        """
+        if total_duration_sec <= 0:
+            total_duration_sec = 60.0
+
+        bucket_sec = bucket_minutes * 60.0
+        num_buckets = max(1, int(total_duration_sec // bucket_sec) + 1)
+        buckets = [0] * num_buckets
+
+        for item in profane_words:
+            st = item.get('start', 0.0)
+            idx = int(st // bucket_sec)
+            if 0 <= idx < num_buckets:
+                buckets[idx] += 1
+
+        result = []
+        for i, count in enumerate(buckets):
+            start_m = i * bucket_minutes
+            end_m = (i + 1) * bucket_minutes
+            result.append({
+                "minute": start_m,
+                "label": f"{start_m:02d}:00 - {end_m:02d}:00",
+                "count": count
+            })
+        return result

@@ -9,10 +9,11 @@ try:
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
         QLabel, QPushButton, QFileDialog, QComboBox, QSpinBox, QDoubleSpinBox,
         QProgressBar, QTextEdit, QTabWidget, QTableWidget, QTableWidgetItem,
-        QHeaderView, QGroupBox, QSlider, QMessageBox, QCheckBox
+        QHeaderView, QGroupBox, QSlider, QMessageBox, QCheckBox, QLineEdit,
+        QFrame, QSplitter
     )
-    from PyQt6.QtCore import Qt, QThread, pyqtSignal
-    from PyQt6.QtGui import QFont, QColor
+    from PyQt6.QtCore import Qt, QThread, pyqtSignal, QRectF
+    from PyQt6.QtGui import QFont, QColor, QPainter, QBrush, QPen
     HAS_PYQT6 = True
 except ImportError:
     HAS_PYQT6 = False
@@ -23,6 +24,95 @@ from core.audio_processor import AudioProcessor
 from core.stats_manager import StatsManager
 from core.export_manager import ExportManager
 from core.watch_folder import WatchFolderMonitor
+
+
+if HAS_PYQT6:
+    class ProfanityHeatmapWidget(QWidget):
+        """Виджет Матометра (гистограмма плотности мата по минутам)."""
+
+        def __init__(self, parent=None):
+            super().__init__(parent)
+            self.density_data: List[Dict] = []
+            self.setMinimumHeight(160)
+            self.setToolTip("Матометр — плотность мата по минутам видео")
+
+        def set_data(self, density_data: List[Dict]):
+            self.density_data = density_data
+            self.update()
+
+        def paintEvent(self, event):
+            painter = QPainter(self)
+            try:
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+                w = self.width()
+                h = self.height()
+
+                painter.fillRect(0, 0, w, h, QColor("#181824"))
+
+                if not self.density_data:
+                    painter.setPen(QColor("#888899"))
+                    painter.setFont(QFont("Arial", 11))
+                    painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "📊 Нет данных плотности мата (обработайте медиафайл)")
+                    return
+
+                max_val = max((d["count"] for d in self.density_data), default=1)
+                max_val = max(1, max_val)
+
+                num_bars = len(self.density_data)
+                padding_left = 40
+                padding_right = 20
+                padding_top = 25
+                padding_bottom = 30
+
+                graph_w = w - padding_left - padding_right
+                graph_h = h - padding_top - padding_bottom
+
+                bar_w = max(2.0, (graph_w / num_bars) - 2.0)
+
+                # Отрисовка сетки с явным приведением к int
+                painter.setPen(QPen(QColor("#2d2d3f"), 1, Qt.PenStyle.DashLine))
+                painter.drawLine(int(padding_left), int(padding_top), int(w - padding_right), int(padding_top))
+                painter.drawLine(int(padding_left), int(padding_top + graph_h / 2), int(w - padding_right), int(padding_top + graph_h / 2))
+                painter.drawLine(int(padding_left), int(padding_top + graph_h), int(w - padding_right), int(padding_top + graph_h))
+
+                # Подпись оси Y
+                painter.setPen(QColor("#00ffcc"))
+                painter.setFont(QFont("Arial", 9))
+                painter.drawText(5, int(padding_top + 10), f"{max_val} матов")
+                painter.drawText(10, int(padding_top + graph_h), "0")
+
+                # Отрисовка столбцов гистограммы
+                for i, item in enumerate(self.density_data):
+                    cnt = item["count"]
+                    bar_h = (cnt / max_val) * graph_h if max_val > 0 else 0
+
+                    x = padding_left + i * (bar_w + 2.0)
+                    y = padding_top + (graph_h - bar_h)
+
+                    if cnt > 0:
+                        intensity = min(1.0, cnt / max(3, max_val))
+                        r_val = int(255)
+                        g_val = int(255 * (1.0 - intensity * 0.8))
+                        b_val = int(50 * (1.0 - intensity))
+                        color = QColor(r_val, g_val, b_val)
+                    else:
+                        color = QColor("#2a2a3c")
+
+                    painter.setBrush(QBrush(color))
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.drawRoundedRect(QRectF(x, y, bar_w, bar_h), 2, 2)
+
+                # Подпись оси X (Время)
+                painter.setPen(QColor("#aaaa88"))
+                if num_bars > 0:
+                    first_label = self.density_data[0]["label"].split(" - ")[0]
+                    last_label = self.density_data[-1]["label"].split(" - ")[-1]
+                    painter.drawText(int(padding_left), int(h - 8), first_label)
+                    painter.drawText(int(w - padding_right - 50), int(h - 8), last_label)
+            finally:
+                painter.end()
+
 
 class ProcessingThread(QThread if HAS_PYQT6 else object):
     """Фоновый поток обработки видео/аудио для GUI."""
@@ -55,7 +145,7 @@ class ProcessingThread(QThread if HAS_PYQT6 else object):
 
             self.emit_progress(0.10, "Загрузка модели Whisper и транскрибация...")
             transcriber = WhisperTranscriber(
-                model_size=self.config.get("model_size", "medium"),
+                model_size=self.config.get("model_size", "antony66/whisper-large-v3-russian"),
                 device=self.config.get("device", "auto"),
                 compute_type=self.config.get("compute_type", "default")
             )
@@ -91,6 +181,7 @@ class ProcessingThread(QThread if HAS_PYQT6 else object):
             self.emit_log(f" Найдено нецензурных слов: {len(profane_words)}")
 
             export_mgr = ExportManager()
+            density_data = export_mgr.get_profanity_density(profane_words, duration_sec)
             highlights = export_mgr.find_highlight_moments(profane_words)
             if highlights:
                 self.emit_log("\n🔥 ТОП ЭМОЦИОНАЛЬНЫХ ПИКОВ СТРИМА (для YouTube Shorts / TikTok):")
@@ -138,8 +229,27 @@ class ProcessingThread(QThread if HAS_PYQT6 else object):
                 censor_mode=self.config.get("censor_mode", "volume_ducking")
             )
 
+            raw_segments_data = []
+            for seg in segments:
+                s_start = getattr(seg, 'start', 0.0) if hasattr(seg, 'start') else (seg.get('start', 0.0) if isinstance(seg, dict) else 0.0)
+                s_end = getattr(seg, 'end', 0.0) if hasattr(seg, 'end') else (seg.get('end', 0.0) if isinstance(seg, dict) else 0.0)
+                s_text = getattr(seg, 'text', '') if hasattr(seg, 'text') else (seg.get('text', '') if isinstance(seg, dict) else '')
+                raw_segments_data.append({
+                    "start": s_start,
+                    "end": s_end,
+                    "text": s_text
+                })
+
+            result_meta = {
+                "session": session_data,
+                "profane_words": profane_words,
+                "density_data": density_data,
+                "segments": raw_segments_data,
+                "duration_sec": duration_sec
+            }
+
             self.emit_progress(1.0, " Обработка успешно завершена!")
-            self.emit_finished(True, f"Файл сохранен: {self.output_path}", session_data)
+            self.emit_finished(True, f"Файл сохранен: {self.output_path}", result_meta)
 
         except Exception as e:
             logging.exception("Ошибка в фоновом потоке:")
@@ -168,9 +278,11 @@ if HAS_PYQT6:
             self.config = self.load_config()
             self.stats_mgr = StatsManager()
             self.watch_monitor = None
+            self.current_segments: List[Dict] = []
+            self.current_profane_words: List[Dict] = []
             
             self.setWindowTitle("AutoCens — Автоматическое запикивание мата (Видео и Аудио)")
-            self.resize(950, 720)
+            self.resize(1000, 750)
             self.setup_ui()
             self.apply_dark_theme()
             self.refresh_stats_view()
@@ -183,7 +295,7 @@ if HAS_PYQT6:
                 except Exception:
                     pass
             return {
-                "model_size": "medium",
+                "model_size": "antony66/whisper-large-v3-russian",
                 "device": "auto",
                 "censor_mode": "volume_ducking",
                 "attenuation_db": -24.0,
@@ -217,6 +329,10 @@ if HAS_PYQT6:
             self.tab_process = QWidget()
             self.setup_process_tab()
             self.tabs.addTab(self.tab_process, "🎬 Обработка видео / аудио")
+
+            self.tab_transcript = QWidget()
+            self.setup_transcript_tab()
+            self.tabs.addTab(self.tab_transcript, "📝 Инспектор расшифровки речи")
 
             self.tab_watch = QWidget()
             self.setup_watch_tab()
@@ -266,11 +382,24 @@ if HAS_PYQT6:
 
             lbl_model = QLabel("Модель Whisper:")
             self.combo_model = QComboBox()
-            self.combo_model.addItems(["base (очень быстро)", "small (быстро)", "medium (рекомендуется)", "large-v3 (макс. точность)"])
-            m_size = self.config.get("model_size", "medium")
-            for i, name in enumerate(["base", "small", "medium", "large"]):
-                if name in m_size:
-                    self.combo_model.setCurrentIndex(i)
+            self.combo_model.addItems([
+                "antony66/whisper-large-v3-russian (🇷🇺 Топ для русской речи)",
+                "medium (рекомендуется баланс)",
+                "large-v3 (оригинал OpenAI)",
+                "small (быстро)",
+                "base (очень быстро)"
+            ])
+            m_size = self.config.get("model_size", "antony66/whisper-large-v3-russian")
+            if "antony66" in m_size or "ru" in m_size:
+                self.combo_model.setCurrentIndex(0)
+            elif "medium" in m_size:
+                self.combo_model.setCurrentIndex(1)
+            elif "large" in m_size:
+                self.combo_model.setCurrentIndex(2)
+            elif "small" in m_size:
+                self.combo_model.setCurrentIndex(3)
+            elif "base" in m_size:
+                self.combo_model.setCurrentIndex(4)
 
             lbl_device = QLabel("Ускорение:")
             self.combo_device = QComboBox()
@@ -300,6 +429,13 @@ if HAS_PYQT6:
             options_box.addWidget(self.chk_davinci)
             layout.addLayout(options_box)
 
+            # Матометр (Profanity Heatmap)
+            heatmap_box = QGroupBox("📊 Матометр (График плотности мата по минутам)")
+            heatmap_layout = QVBoxLayout(heatmap_box)
+            self.heatmap_widget = ProfanityHeatmapWidget()
+            heatmap_layout.addWidget(self.heatmap_widget)
+            layout.addWidget(heatmap_box)
+
             has_gpu, gpu_desc = WhisperTranscriber.get_gpu_info()
             self.lbl_gpu_status = QLabel(f"⚡ Ускорение: {gpu_desc}")
             self.lbl_gpu_status.setStyleSheet("color: #00ffcc; font-weight: bold; padding: 2px;")
@@ -319,8 +455,85 @@ if HAS_PYQT6:
             layout.addWidget(self.progress_bar)
 
             self.log_text = QTextEdit()
+            self.log_text.setMaximumHeight(100)
             self.log_text.setReadOnly(True)
             layout.addWidget(self.log_text)
+
+        def setup_transcript_tab(self):
+            layout = QVBoxLayout(self.tab_transcript)
+
+            top_box = QGroupBox("🔍 Поиск и проверка точности распознанных слов")
+            top_layout = QHBoxLayout(top_box)
+
+            self.txt_search_word = QLineEdit()
+            self.txt_search_word.setPlaceholderText("Введите слово для поиска (например: 'сухую', 'сука', 'блять')...")
+            self.txt_search_word.textChanged.connect(self.filter_transcript_view)
+
+            self.lbl_search_count = QLabel("Найдено: 0 совпадений")
+            self.lbl_search_count.setStyleSheet("font-weight: bold; color: #00ffcc; margin-left: 10px;")
+
+            top_layout.addWidget(self.txt_search_word)
+            top_layout.addWidget(self.lbl_search_count)
+            layout.addWidget(top_box)
+
+            self.transcript_display = QTextEdit()
+            self.transcript_display.setReadOnly(True)
+            self.transcript_display.setStyleSheet("background-color: #1a1a24; color: #e0e0e0; font-family: Consolas, monospace; font-size: 13px;")
+            layout.addWidget(self.transcript_display)
+
+        def render_transcript_html(self, filter_query: str = ""):
+            if not self.current_segments:
+                self.transcript_display.setHtml("<p style='color: #888899; text-align: center;'>Транскрибация отсутствует. Запустите обработку медиафайла.</p>")
+                self.lbl_search_count.setText("Найдено: 0 совпадений")
+                return
+
+            p_filter = ProfanityFilter(
+                custom_bad_words=self.config.get("custom_bad_words", []),
+                custom_whitelist=self.config.get("whitelist_words", [])
+            )
+
+            filter_query = filter_query.strip().lower()
+            html_lines = []
+            match_count = 0
+
+            for seg in self.current_segments:
+                st = seg.get("start", 0.0) if isinstance(seg, dict) else (getattr(seg, 'start', 0.0) if hasattr(seg, 'start') else 0.0)
+                tc_str = f"[{int(st // 3600):02d}:{int((st % 3600) // 60):02d}:{int(st % 60):02d}]"
+                text = seg.get("text", "").strip() if isinstance(seg, dict) else (getattr(seg, 'text', '').strip() if hasattr(seg, 'text') else '')
+
+                if not text:
+                    continue
+
+                if filter_query and filter_query not in text.lower():
+                    continue
+
+                if filter_query:
+                    match_count += text.lower().count(filter_query)
+
+                words = text.split()
+                formatted_words = []
+                for w in words:
+                    clean_w = p_filter.clean_word(w)
+                    is_bad = p_filter.is_profane(clean_w)
+                    
+                    if filter_query and filter_query in clean_w:
+                        formatted_words.append(f"<span style='background-color: #ffaa00; color: black; font-weight: bold; padding: 2px 4px; border-radius: 3px;'>{w}</span>")
+                    elif is_bad:
+                        formatted_words.append(f"<span style='background-color: #990022; color: #ff99aa; font-weight: bold; padding: 2px 4px; border-radius: 3px;'>{w}</span>")
+                    else:
+                        formatted_words.append(w)
+
+                line_html = f"<div style='margin-bottom: 6px;'><span style='color: #00ffcc; font-weight: bold;'>{tc_str}</span> {' '.join(formatted_words)}</div>"
+                html_lines.append(line_html)
+
+            self.transcript_display.setHtml("".join(html_lines))
+            if filter_query:
+                self.lbl_search_count.setText(f"Найдено: {match_count} совпадений")
+            else:
+                self.lbl_search_count.setText(f"Всего строк: {len(html_lines)}")
+
+        def filter_transcript_view(self, text: str):
+            self.render_transcript_html(text)
 
         def setup_watch_tab(self):
             layout = QVBoxLayout(self.tab_watch)
@@ -524,8 +737,17 @@ if HAS_PYQT6:
             elif mode_idx == 2:
                 censor_mode = "beep"
 
-            model_size_map = ["base", "small", "medium", "large-v3"]
-            model_size = model_size_map[self.combo_model.currentIndex()]
+            model_idx = self.combo_model.currentIndex()
+            if model_idx == 0:
+                model_size = "antony66/whisper-large-v3-russian"
+            elif model_idx == 1:
+                model_size = "medium"
+            elif model_idx == 2:
+                model_size = "large-v3"
+            elif model_idx == 3:
+                model_size = "small"
+            else:
+                model_size = "base"
 
             dev_map = ["auto", "cuda", "cpu"]
             device = dev_map[self.combo_device.currentIndex()]
@@ -556,7 +778,14 @@ if HAS_PYQT6:
         def processing_finished(self, success: bool, msg: str, data: dict):
             self.btn_start.setEnabled(True)
             if success:
-                QMessageBox.information(self, "Успешно!", f"{msg}\nСтатистика обновлена!")
+                density_data = data.get("density_data", [])
+                self.heatmap_widget.set_data(density_data)
+
+                self.current_segments = data.get("segments", [])
+                self.current_profane_words = data.get("profane_words", [])
+                self.render_transcript_html()
+
+                QMessageBox.information(self, "Успешно!", f"{msg}\nМатометр и расшифровка обновлены!")
                 self.refresh_stats_view()
             else:
                 QMessageBox.critical(self, "Ошибка", f"Произошла ошибка при обработке:\n{msg}")
@@ -595,7 +824,7 @@ if HAS_PYQT6:
                 left: 10px;
                 padding: 0 5px;
             }
-            QTextEdit, QSpinBox, QDoubleSpinBox, QComboBox {
+            QTextEdit, QSpinBox, QDoubleSpinBox, QComboBox, QLineEdit {
                 background-color: #252526;
                 color: #ffffff;
                 border: 1px solid #3c3c3c;

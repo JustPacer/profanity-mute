@@ -1,0 +1,16 @@
+{
+  "model_size": "medium",
+  "language": "ru",
+  "device": "auto",
+  "compute_type": "default",
+  "censor_mode": "volume_ducking",
+  "attenuation_db": -24.0,
+  "beep_frequency": 1000,
+  "padding_start_sec": 0.06,
+  "padding_end_sec": 0.06,
+  "fade_duration_sec": 0.02,
+  "custom_bad_words": [],
+  "whitelist_words": [],
+  "watch_folder": "C:/Users/sanam/Videos/VODS SB",
+  "watch_folder_enabled": false
+}

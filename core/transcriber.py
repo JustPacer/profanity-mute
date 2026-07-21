@@ -36,10 +36,25 @@ class WhisperTranscriber:
         """Автоматическая настройка путей к DLL динамических библиотек NVIDIA CUDA под Windows."""
         if sys.platform == "win32":
             import site
-            site_packages = site.getsitepackages()
+            search_paths = []
+            try:
+                search_paths.extend(site.getsitepackages())
+            except Exception:
+                pass
+            try:
+                search_paths.append(site.getusersitepackages())
+            except Exception:
+                pass
+            
+            # Добавляем пути из sys.path для максимальной надежности
+            for p in sys.path:
+                if p and p not in search_paths:
+                    search_paths.append(p)
+            
             nvidia_paths = []
-
-            for sp in site_packages:
+            for sp in search_paths:
+                if not sp or not os.path.isdir(sp):
+                    continue
                 nv_dir = os.path.join(sp, "nvidia")
                 if os.path.exists(nv_dir):
                     for sub in os.listdir(nv_dir):
@@ -60,6 +75,7 @@ class WhisperTranscriber:
     @staticmethod
     def get_gpu_info() -> Tuple[bool, str]:
         """Проверяет наличие GPU от NVIDIA и доступность системы CUDA."""
+        WhisperTranscriber.setup_cuda_dll_path()
         try:
             import torch
             if torch.cuda.is_available():
@@ -78,11 +94,11 @@ class WhisperTranscriber:
                 try:
                     import ctypes
                     ctypes.CDLL(dll)
-                    return True, "NVIDIA CUDA (Обнаружен через DLL)"
+                    return True, "NVIDIA CUDA"
                 except Exception:
                     pass
 
-        return False, "CPU (Процессор)"
+        return False, "CPU"
 
     def load_model(self):
         """Загружает модель faster-whisper с выбором безопасных путей и авто-фолбеком."""

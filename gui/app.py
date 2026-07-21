@@ -658,6 +658,22 @@ if HAS_PYQT6:
 
         def toggle_watch_folder(self, enabled: bool):
             folder = self.txt_watch_folder.toPlainText().strip()
+            if folder.startswith("file://"):
+                from urllib.parse import urlparse
+                from urllib.request import url2pathname
+                try:
+                    parsed = urlparse(folder)
+                    decoded_path = url2pathname(parsed.path)
+                    if decoded_path.startswith('/') and len(decoded_path) > 2 and decoded_path[2] == ':':
+                        decoded_path = decoded_path[1:]
+                    folder = os.path.abspath(decoded_path)
+                    self.txt_watch_folder.setText(folder)
+                except Exception:
+                    folder = folder.replace("file:///", "").replace("file://", "")
+                    from urllib.parse import unquote
+                    folder = unquote(folder)
+                    self.txt_watch_folder.setText(folder)
+
             self.config["watch_folder_enabled"] = enabled
             self.config["watch_folder"] = folder
             self.save_config()
@@ -723,6 +739,22 @@ if HAS_PYQT6:
 
         def start_processing(self):
             media_path = self.input_file_edit.toPlainText().strip()
+            if media_path.startswith("file://"):
+                from urllib.parse import urlparse
+                from urllib.request import url2pathname
+                try:
+                    parsed = urlparse(media_path)
+                    decoded_path = url2pathname(parsed.path)
+                    if decoded_path.startswith('/') and len(decoded_path) > 2 and decoded_path[2] == ':':
+                        decoded_path = decoded_path[1:]
+                    media_path = os.path.abspath(decoded_path)
+                    self.input_file_edit.setText(media_path)
+                except Exception:
+                    media_path = media_path.replace("file:///", "").replace("file://", "")
+                    from urllib.parse import unquote
+                    media_path = unquote(media_path)
+                    self.input_file_edit.setText(media_path)
+
             if not media_path or not os.path.exists(media_path):
                 QMessageBox.warning(self, "Ошибка", "Пожалуйста, выберите валидный медиафайл!")
                 return

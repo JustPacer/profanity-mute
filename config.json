@@ -1,9 +1,9 @@
 {
-  "model_size": "russian",
+  "model_size": "medium",
   "language": "ru",
-  "device": "cuda",
+  "device": "auto",
   "compute_type": "default",
-  "censor_mode": "mute",
+  "censor_mode": "volume_ducking",
   "attenuation_db": -24.0,
   "beep_frequency": 1000,
   "padding_start_sec": 0.06,

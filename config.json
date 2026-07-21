@@ -3,7 +3,7 @@
   "language": "ru",
   "device": "auto",
   "compute_type": "default",
-  "censor_mode": "volume-ducking",
+  "censor_mode": "volume_ducking",
   "attenuation_db": -24.0,
   "beep_frequency": 1000,
   "padding_start_sec": 0.06,
